@@ -206,6 +206,8 @@ dotnet run --project src\CgMosqCtl\CgMosqCtl.csproj -- check --config cg-broker.
 
 После установки на сервере — проверяем что брокер работает.
 
+### RAW телеметрия
+
 **Терминал 1** — подписка:
 
 ```bash
@@ -218,10 +220,30 @@ mosquitto_sub -h 10.10.10.1 -t 'cg/v1/telemetry/SN/+' -v
 mosquitto_pub -h 10.10.10.1 -t 'cg/v1/telemetry/SN/TEST_SN' -m 'hello'
 ```
 
-Ожидаемый результат в первом терминале:
+Ожидаемый результат:
 
 ```
 cg/v1/telemetry/SN/TEST_SN hello
+```
+
+### Decoded данные
+
+**Терминал 1** — подписка на декодированные данные:
+
+```bash
+mosquitto_sub -h 10.10.10.1 -t 'cg/v1/decoded/SN/+' -v
+```
+
+**Терминал 2** — публикация:
+
+```bash
+mosquitto_pub -h 10.10.10.1 -t 'cg/v1/decoded/SN/TEST_SN' -m '{"power":42}'
+```
+
+Ожидаемый результат:
+
+```
+cg/v1/decoded/SN/TEST_SN {"power":42}
 ```
 
 ---
