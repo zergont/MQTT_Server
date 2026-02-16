@@ -1,0 +1,19 @@
+{
+  "profiles": {
+    "check": {
+      "commandName": "Project",
+      "commandLineArgs": "check --config cg-broker.yaml",
+      "workingDirectory": "$(SolutionDir)"
+    },
+    "render": {
+      "commandName": "Project",
+      "commandLineArgs": "render --config cg-broker.yaml --out out",
+      "workingDirectory": "$(SolutionDir)"
+    },
+    "print-example-config": {
+      "commandName": "Project",
+      "commandLineArgs": "print-example-config",
+      "workingDirectory": "$(SolutionDir)"
+    }
+  }
+}
