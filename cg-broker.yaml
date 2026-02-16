@@ -1,0 +1,23 @@
+# cg-broker.yaml — единый конфиг для Mosquitto MQTT broker
+
+listener:
+  bind_ip: "10.10.10.1"
+  port: 1883
+
+paths:
+  mosquitto_conf: "/etc/mosquitto/conf.d/cg.conf"
+  log: "/var/log/mosquitto/mosquitto.log"
+
+persistence:
+  enabled: true
+  location: "/var/lib/mosquitto/"
+
+logging:
+  connection_messages: true
+
+security:
+  auth_enabled: false
+  allow_anonymous: true
+  passwd_path: "/etc/mosquitto/passwd"
+  acl_path: "/etc/mosquitto/acl"
+  users: []
