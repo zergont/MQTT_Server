@@ -1,16 +1,33 @@
 # cg-mqtt-broker
 
-Репозиторий для развёртывания **MQTT broker Mosquitto** на Ubuntu с управлением конфигурацией через **один файл** `cg-broker.yaml`.
+Репозиторий для развёртывания **MQTT broker Mosquitto** на Ubuntu-сервере.  
+Вся конфигурация — через **один файл** `cg-broker.yaml`.
 
-## Архитектура
+Репозиторий: <https://github.com/zergont/MQTT_Server>
+
+---
+
+## Что это и зачем
+
+Mosquitto — MQTT-брокер, который принимает телеметрию от устройств RUT956 и передаёт её декодеру `telemetry2`.  
+Этот репозиторий содержит:
+
+- **`cg-broker.yaml`** — единственный конфиг, который нужно редактировать
+- **`cg-mosqctl`** — .NET 8 утилита, которая генерирует конфиг Mosquitto из YAML и применяет его
+- **Shell-скрипты** — установка, обновление, проверка статуса на Ubuntu
+
+### Схема работы
 
 ```
-RUT956 → Mosquitto (10.10.10.1:1883) → telemetry2 (subscribe raw → publish decoded)
+RUT956  ──publish──►  Mosquitto (10.10.10.1:1883)  ──subscribe──►  telemetry2
+                          MQTT broker                              декодер
 ```
 
-- **Mosquitto** — MQTT broker (сервер), маршрутизирует сообщения по топикам
-- **telemetry2** — клиент-декодер (subscriber/publisher), подписывается на сырые данные и публикует декодированные
-- **RUT956** — устройства, публикующие телеметрию
+| Роль | Описание |
+|------|----------|
+| **Mosquitto** | MQTT broker (сервер), маршрутизирует сообщения по топикам |
+| **RUT956** | Устройства, публикуют сырую телеметрию |
+| **telemetry2** | Клиент-декодер, подписывается на RAW → публикует DECODED |
 
 ### Топики
 
@@ -20,41 +37,54 @@ RUT956 → Mosquitto (10.10.10.1:1883) → telemetry2 (subscribe raw → publish
 | Статус (опционально) | `cg/v1/status/SN/<sn>` |
 | Декодированные данные | `cg/v1/decoded/SN/<sn>/pcc/<bserver_id>` |
 
+---
+
 ## Безопасность
 
-- Mosquitto слушает **только** `10.10.10.1:1883` (WireGuard/LAN интерфейс)
+- Mosquitto слушает **только** `10.10.10.1:1883` (WireGuard интерфейс)
 - Наружу порт **не открываем** — доступ только через WireGuard
 - Аутентификация **выключена** по умолчанию (`allow_anonymous true`)
-- При необходимости можно включить auth/ACL одним флагом в YAML
+- При необходимости можно включить auth/ACL одним флагом в YAML (см. ниже)
+
+---
 
 ## Предусловия
 
 - Ubuntu 22.04+ (или другой Debian-based дистрибутив)
-- Доступ root (sudo)
+- Доступ root (`sudo`)
 - IP `10.10.10.1` поднят на сервере (WireGuard интерфейс)
 - .NET 8 SDK установлен ([инструкция](https://learn.microsoft.com/en-us/dotnet/core/install/linux-ubuntu))
+
+---
 
 ## Установка с нуля
 
 ```bash
 # 1. Клонируем репозиторий
-git clone <repo-url> /opt/cg-mqtt-broker
+git clone https://github.com/zergont/MQTT_Server.git /opt/cg-mqtt-broker
 cd /opt/cg-mqtt-broker
 
-# 2. Редактируем конфиг (при необходимости)
+# 2. Копируем и редактируем конфиг
 cp cg-broker.example.yaml cg-broker.yaml
 nano cg-broker.yaml
 
-# 3. Устанавливаем
+# 3. Делаем скрипты исполняемыми и исправляем окончания строк
+chmod +x scripts/*.sh
+sed -i 's/\r$//' scripts/*.sh
+
+# 4. Устанавливаем
 sudo ./scripts/install.sh
 ```
 
 Скрипт `install.sh` выполнит:
-1. Установку `mosquitto` и `mosquitto-clients`
-2. Включение сервиса mosquitto
+
+1. `apt install mosquitto mosquitto-clients`
+2. `systemctl enable --now mosquitto`
 3. Сборку и установку утилиты `cg-mosqctl`
 4. Применение конфига из `cg-broker.yaml`
 5. Smoke test
+
+---
 
 ## Конфигурация
 
@@ -92,7 +122,7 @@ security:
 sudo ./scripts/apply.sh
 ```
 
-### Включение аутентификации (опционально)
+### Включение аутентификации (опционально, на будущее)
 
 ```yaml
 security:
@@ -109,6 +139,8 @@ security:
         - "cg/v1/#"
 ```
 
+---
+
 ## Обновление конфигурации
 
 ```bash
@@ -118,24 +150,29 @@ sudo ./scripts/apply.sh
 ```
 
 Скрипт `apply.sh`:
-1. Подтянет изменения из git (если в git-репозитории)
+
+1. Подтянет изменения из git
 2. Валидирует конфиг
-3. Создаст бэкап текущих файлов
+3. Создаст бэкап текущих файлов (`*.bak-YYYYMMDD-HHMMSS`)
 4. Запишет новый конфиг в `/etc/mosquitto/conf.d/cg.conf`
 5. Перезапустит mosquitto
 
+---
+
 ## Утилита cg-mosqctl
+
+.NET 8 консольное приложение (`src/CgMosqCtl/`). Читает `cg-broker.yaml`, генерирует и применяет конфиг Mosquitto.
 
 ### Команды
 
 ```bash
-# Проверить конфиг (валидация)
+# Валидация конфига
 cg-mosqctl check --config cg-broker.yaml
 
-# Сгенерировать файлы в директорию (без применения)
+# Генерация файлов в директорию (без применения на сервер)
 cg-mosqctl render --config cg-broker.yaml --out out/
 
-# Применить конфиг и перезапустить mosquitto
+# Применить конфиг + перезапустить mosquitto
 sudo cg-mosqctl apply --config cg-broker.yaml
 
 # Показать пример конфига
@@ -145,24 +182,49 @@ cg-mosqctl print-example-config
 ### Поведение при ошибках
 
 - Если конфиг невалиден — **ничего не применяется**, выводится понятная ошибка
-- Перед записью делается backup (`*.bak-YYYYMMDD-HHMMSS`)
+- Перед записью автоматически создаётся backup
+
+### Локальная разработка (Windows / VS2022)
+
+Утилиту можно собрать и запустить в Visual Studio 2022:
+
+1. Открыть `cg-mqtt-broker.sln`
+2. Выбрать профиль запуска: **check**, **render** или **print-example-config**
+3. Нажать **F5** (или **Ctrl+F5**)
+
+Либо из терминала VS:
+
+```powershell
+dotnet run --project src\CgMosqCtl\CgMosqCtl.csproj -- check --config cg-broker.yaml
+```
+
+> ⚠️ Команда `apply` на Windows не работает — она вызывает `systemctl`, который есть только на Linux.
+
+---
 
 ## Smoke Test
 
-В одном терминале — подписка:
+После установки на сервере — проверяем что брокер работает.
+
+**Терминал 1** — подписка:
+
 ```bash
 mosquitto_sub -h 10.10.10.1 -t 'cg/v1/telemetry/SN/+' -v
 ```
 
-В другом — публикация:
+**Терминал 2** — публикация:
+
 ```bash
 mosquitto_pub -h 10.10.10.1 -t 'cg/v1/telemetry/SN/TEST_SN' -m 'hello'
 ```
 
 Ожидаемый результат в первом терминале:
+
 ```
 cg/v1/telemetry/SN/TEST_SN hello
 ```
+
+---
 
 ## Расположение файлов
 
@@ -173,6 +235,8 @@ cg/v1/telemetry/SN/TEST_SN hello
 | Логи Mosquitto | `/var/log/mosquitto/mosquitto.log` |
 | Persistence | `/var/lib/mosquitto/` |
 | Утилита cg-mosqctl | `/usr/local/bin/cg-mosqctl` |
+
+---
 
 ## Проверка статуса
 
@@ -190,21 +254,20 @@ tail -f /var/log/mosquitto/mosquitto.log
 sudo ./scripts/status.sh
 ```
 
+---
+
 ## Типовые ошибки и решения
 
 ### Mosquitto не запускается
 
 ```bash
-# Проверить конфиг
-mosquitto -c /etc/mosquitto/conf.d/cg.conf -t
-
-# Посмотреть журнал
-journalctl -u mosquitto -e --no-pager
+mosquitto -c /etc/mosquitto/conf.d/cg.conf -t    # проверить синтаксис конфига
+journalctl -u mosquitto -e --no-pager             # посмотреть журнал
 ```
 
 ### Ошибка "Address not available"
 
-IP `10.10.10.1` не поднят на сервере. Убедитесь, что WireGuard интерфейс активен:
+IP `10.10.10.1` не поднят на сервере. Проверьте WireGuard:
 
 ```bash
 ip addr show wg0
@@ -221,10 +284,7 @@ ss -tlnp | grep 1883
 ### Конфиг не применяется
 
 ```bash
-# Проверить валидность
-cg-mosqctl check --config cg-broker.yaml
-
-# Посмотреть сгенерированный конфиг
-cg-mosqctl render --config cg-broker.yaml --out /tmp/test-out
+cg-mosqctl check --config cg-broker.yaml                        # валидация
+cg-mosqctl render --config cg-broker.yaml --out /tmp/test-out   # посмотреть что сгенерируется
 cat /tmp/test-out/cg-mosquitto.conf
 ```
